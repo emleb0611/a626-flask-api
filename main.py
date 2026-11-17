@@ -113,14 +113,14 @@ def getData():
     res['sqltime'] = 0          
     key = request.args.get('key')
 
-    # 1. Check the key
+    
     if not auth(key):
         res['code'] = 0       #number that means failed, 1 = success
         res['msg'] = 'auth error'
         log(key, res['req'], '429')   #status code for "not allowed"
         return json.dumps(res, indent=4)
 
-    # 2. Get the inputs and check they exist
+    
     start = request.args.get('start')   #from URL
     end = request.args.get('end')
     if start is None or end is None:
@@ -129,7 +129,7 @@ def getData():
         log(key, res['req'], '400')   #status code for "bad request"
         return json.dumps(res, indent=4)
 
-    # 3. Run the query and time it
+    
     conn = pymysql.connect(**db_config)
     cur = conn.cursor(pymysql.cursors.DictCursor)
     sql = 'SELECT * FROM `class_datapoints` WHERE `date_time` BETWEEN %s AND %s ORDER BY `date_time` LIMIT 0,500;'     #uses the first query with %s, limits results to 500
@@ -138,7 +138,7 @@ def getData():
     rows = cur.fetchall()
     res['sqltime'] = time.time() - t0
 
-    # 4. Build the response
+    
     res['code'] = 1             # spec: what number means "success"?
     res['msg'] = 'ok'
     res['results'] = rows
@@ -146,6 +146,54 @@ def getData():
     log(key, res['req'], '200')     # status code for success
     return json.dumps(res, indent=4, default=str)
 
+
+#building /countinpolygon
+@app.route("/countInPolygon", methods=['GET'])
+def countInPolygon():
+    res = {}
+    res['req'] = '/countInPolygon'    
+    res['sqltime'] = 0
+    key = request.args.get('key')
+
+    
+    if not auth(key):
+        res['code'] = 0
+        res['msg'] = 'auth error'
+        log(key, res['req'], '429')
+        return json.dumps(res, indent=4)
+
+    
+    polygon = request.args.get('polygon')      #from URL
+    if polygon is None:
+        res['code'] = 0
+        res['msg'] = 'needs polygon to proceed'        #message if key(polygon) is missing
+        log(key, res['req'], 400)
+        return json.dumps(res, indent=4)
+
+    
+    shape = f'Polygon(({polygon}))'
+
+    # 4. Run the query and time it
+    conn = pymysql.connect(**db_config)
+    cur = conn.cursor(pymysql.cursors.DictCursor)
+    sql = 'SELECT COUNT(*) AS count FROM `class_datapoints` WHERE st_within(geo_point, ST_GeomFromText(%s,0));'
+    t0 = time.time()
+    try:
+        cur.execute(sql, (shape,))         #variable that fills %s in sql
+        row = cur.fetchone()
+    except Exception as e:
+        res['code'] = 0
+        res['msg'] = 'invalid polygon: ' + str(e)
+        log(key, res['req'], '400')
+        return json.dumps(res, indent=4)
+    res['sqltime'] = time.time() - t0
+
+    
+    res['code'] = 1
+    res['msg'] = 'ok'
+    res['results'] = row['count']
+    log(key, res['req'], '200')
+    return json.dumps(res, indent=4, default=str)
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0',debug=True)
