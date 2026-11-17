@@ -195,5 +195,53 @@ def countInPolygon():
     log(key, res['req'], '200')
     return json.dumps(res, indent=4, default=str)
 
+#building /getAvgSpeedByFlight endpoint
+
+@app.route("/getAvgSpeedByFlight", methods=['GET'])
+def getAvgSpeedByFlight():
+    res = {}
+    res['req'] = '/getAvgSpeedByFlight'
+    res['sqltime'] = 0
+    key = request.args.get('key')
+
+    
+    if not auth(key):
+        res['code'] = 0
+        res['msg'] = 'auth error'
+        log(key, res['req'], '429')
+        return json.dumps(res, indent=4)
+
+    #optional start and end dates
+    start = request.args.get('start')
+    end = request.args.get('end')
+    #send error if only one date is given:
+    if (start is None) != (end is None):
+        res['code'] = 0
+        res['msg'] = "provide both start AND end dates, or no dates at all"      #explanation error message
+        log(key, res['req'], '400')
+        return json.dumps(res, indent=4)
+
+    
+    conn = pymysql.connect(**db_config)
+    cur = conn.cursor(pymysql.cursors.DictCursor)
+    if start is not None:
+        sql = 'SELECT AVG(gs) AS avg_speed, `flight_num` FROM `class_datapoints` WHERE `date_time` BETWEEN %s AND %s GROUP BY `flight_num` ORDER BY `flight_num` LIMIT 0,500' #limits to 500
+        params = (start, end)
+    else: #same SQL query but WHERE and BETWEEN part is removed
+        sql = 'SELECT AVG(gs) AS avg_speed, `flight_num` FROM `class_datapoints` GROUP BY `flight_num` ORDER BY `flight_num` LIMIT 0,500;'     
+        params = ()
+    t0 = time.time()
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    res['sqltime'] = time.time() - t0
+
+   
+    res['code'] = 1
+    res['msg'] = 'ok'
+    res['results'] = rows
+    res['num_results'] = len(rows)
+    log(key, res['req'], '200')
+    return json.dumps(res, indent=4, default=str)
+
 if __name__ == "__main__":
     app.run(host='0.0.0.0',debug=True)
